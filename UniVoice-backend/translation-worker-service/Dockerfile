@@ -7,5 +7,6 @@ RUN mvn -f translation-worker-service/pom.xml clean package spring-boot:repackag
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/translation-worker-service/target/*.jar app.jar
+COPY translation-worker-service/src/main/resources/ca.pem /app/ca.pem
 EXPOSE 8080
-ENTRYPOINT ["java", "-Xmx380m", "-Dspring.profiles.active=prod", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Xmx320m", "-Dspring.profiles.active=prod", "-jar", "app.jar"]
