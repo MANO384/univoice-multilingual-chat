@@ -2,7 +2,7 @@ FROM maven:3.9.6-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
 COPY user-service ./user-service
-RUN mvn -f user-service/pom.xml clean package -DskipTests
+RUN mvn -f user-service/pom.xml clean package spring-boot:repackage -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
