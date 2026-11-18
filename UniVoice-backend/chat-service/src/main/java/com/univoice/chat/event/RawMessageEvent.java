@@ -1,0 +1,12 @@
+package com.univoice.chat.event;
+
+import java.time.LocalDateTime;
+
+public record RawMessageEvent(
+    String messageUuid,
+    String senderUuid,
+    String receiverUuid,
+    String senderLanguage,
+    String originalText,
+    LocalDateTime timestamp
+) {}

@@ -1,0 +1,16 @@
+.metadata/
+bin/
+target/
+*.jar
+*.war
+*.log
+node_modules/
+dist/
+.env
+.env.local
+.settings/
+.classpath
+.project
+.idea/
+.vscode/
+.DS_Store

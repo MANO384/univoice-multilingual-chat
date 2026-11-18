@@ -1,0 +1,27 @@
+package snippet;
+
+public class Snippet {
+	server.port=${PORT:8083}
+	eureka.client.enabled=false
+	
+	spring.datasource.url=jdbc:mysql://mysql-345da23b-palanimanojkumar924-ffe4.i.aivencloud.com:24130/univoice_translation_db?useSSL=true&requireSSL=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
+	spring.datasource.username=avnadmin
+	spring.datasource.password=${DB_PASSWORD}
+	
+	spring.data.redis.host=notable-goshawk-127052.upstash.io
+	spring.data.redis.port=6379
+	spring.data.redis.password=${REDIS_PASSWORD}
+	spring.data.redis.ssl.enabled=true
+	
+	spring.kafka.bootstrap-servers=kafka-2351024d-palanimanojkumar924-ffe4.h.aivencloud.com:24143
+	spring.kafka.properties.security.protocol=SASL_SSL
+	spring.kafka.properties.sasl.mechanism=SCRAM-SHA-256
+	spring.kafka.properties.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="avnadmin" password="${KAFKA_PASSWORD}";
+	spring.kafka.properties.ssl.truststore.type=PEM
+	spring.kafka.properties.ssl.truststore.location=classpath:ca.pem
+	
+	app.services.user-service-url=${USER_SERVICE_URL}/api/v1/users
+	app.sarvam.api-key=${SARVAM_API_KEY}
+	app.global-translate.api-key=${GROQ_API_KEY}
+}
+
