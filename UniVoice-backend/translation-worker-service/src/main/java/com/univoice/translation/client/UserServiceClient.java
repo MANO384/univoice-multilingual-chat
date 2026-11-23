@@ -13,9 +13,9 @@ public class UserServiceClient {
     private final RestClient restClient;
 
     public UserServiceClient(
-            RestClient.Builder loadBalancedRestClientBuilder,
-            @Value("${app.services.user-service-url:http://user-service/api/v1/users}") String baseUrl) {
-        this.restClient = loadBalancedRestClientBuilder.baseUrl(baseUrl).build();
+            @Value("${app.services.user-service-url:https://univoice-multilingual-chat.onrender.com/api/v1/users}") String baseUrl) {
+        this.restClient = RestClient.builder().baseUrl(baseUrl.trim()).build();
+        log.info("UserServiceClient initialized -> baseUrl={}", baseUrl.trim());
     }
 
     public TranslationTarget resolveTarget(String receiverUuid, String senderUuid) {
@@ -28,7 +28,7 @@ public class UserServiceClient {
             if (targetLanguage == null || targetLanguage.isBlank() || "NONE".equalsIgnoreCase(targetLanguage)) {
                 return new TranslationTarget(false, null);
             }
-            return new TranslationTarget(true, targetLanguage);
+            return new TranslationTarget(true, targetLanguage.trim());
         } catch (Exception ex) {
             log.warn("Failed to resolve target language for receiver {}: {}. Defaulting to 'en'", receiverUuid, ex.getMessage());
             return new TranslationTarget(true, "en");
