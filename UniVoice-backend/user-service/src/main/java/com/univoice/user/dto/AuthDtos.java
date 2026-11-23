@@ -1,5 +1,6 @@
 package com.univoice.user.dto;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Builder;
@@ -12,6 +13,10 @@ public class AuthDtos {
         @NotBlank(message = "Phone number is required")
         @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Phone number must be 10 to 15 digits, optionally prefixed with '+'")
         private String phoneNumber;
+
+        @NotBlank(message = "Email address is required")
+        @Email(message = "Please enter a valid email address")
+        private String email;
     }
 
     @Data
@@ -27,6 +32,10 @@ public class AuthDtos {
     public static class SignUpRequest {
         @NotBlank(message = "Phone number is required")
         private String phoneNumber;
+
+        @NotBlank(message = "Email address is required")
+        @Email(message = "Please enter a valid email address")
+        private String email;
 
         @NotBlank(message = "OTP is required")
         private String otp;
@@ -63,7 +72,7 @@ public class AuthDtos {
         @NotBlank(message = "Refresh token is required")
         private String refreshToken;
     }
-    
+
     @Data
     public static class ForgotPasswordRequest {
         @NotBlank(message = "Phone number is required")
@@ -82,7 +91,7 @@ public class AuthDtos {
         @NotBlank(message = "New password is required")
         private String newPassword;
     }
-    
+
     @Data
     @Builder
     public static class AuthResponse {
@@ -90,6 +99,7 @@ public class AuthDtos {
         private String refreshToken;
         private String userUuid;
         private String displayName;
+        private String email;
         private String motherTongue;
         private String preferredLanguage;
     }

@@ -80,13 +80,23 @@ public class UserServiceImpl implements UserService {
     @Override
     public List<UserResponse> getMySavedContacts(String currentUserUuid) {
         return userContactRepository.findByOwnerUuid(currentUserUuid).stream()
-                .map(c -> UserResponse.builder()
-                        .userUuid(c.getContactUserUuid())
-                        .displayName(c.getContactName())
-                        .phoneNumber(c.getContactPhone())
-                        .motherTongue(c.getMotherTongue() != null ? c.getMotherTongue() : "en")
-                        .defaultLanguage(c.getMotherTongue() != null ? c.getMotherTongue() : "en")
-                        .build())
+                .map(c -> {
+                    User liveUser = userRepository.findByUserUuid(c.getContactUserUuid()).orElse(null);
+                    String liveTongue = (liveUser != null && liveUser.getMotherTongue() != null)
+                            ? liveUser.getMotherTongue()
+                            : (c.getMotherTongue() != null ? c.getMotherTongue() : "en");
+                    String liveDefault = (liveUser != null && liveUser.getDefaultLanguage() != null)
+                            ? liveUser.getDefaultLanguage()
+                            : liveTongue;
+
+                    return UserResponse.builder()
+                            .userUuid(c.getContactUserUuid())
+                            .displayName(c.getContactName())
+                            .phoneNumber(c.getContactPhone())
+                            .motherTongue(liveTongue)
+                            .defaultLanguage(liveDefault)
+                            .build();
+                })
                 .toList();
     }
 

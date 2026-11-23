@@ -4,7 +4,8 @@ import { wsService } from './services/websocket';
 import AuthScreen from './components/AuthScreen';
 import {
   Send, Globe, LogOut, Search, MessageSquare, RefreshCw,
-  ChevronUp, UserPlus, Users, X, Check, CheckCheck, AlertCircle, Pencil, Trash2, Lock, Info
+  ChevronUp, UserPlus, Users, X, Check, CheckCheck, AlertCircle,
+  Pencil, Trash2, Lock, Info, ShieldCheck, ShieldOff, UserMinus
 } from 'lucide-react';
 import { CONTACT_LANG_OPTIONS } from './constants/languages';
 
@@ -86,8 +87,12 @@ export default function App() {
   const [groupCreating, setGroupCreating] = useState(false);
   const [groupError, setGroupError] = useState('');
 
-  // Group Info Modal
+  // Group Info & Admin Management Modal
   const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
+  const [isAddingGroupMembers, setIsAddingGroupMembers] = useState(false);
+  const [addMemberUuids, setAddMemberUuids] = useState([]);
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
+  const [groupActionError, setGroupActionError] = useState('');
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -177,26 +182,37 @@ export default function App() {
   };
 
   const fetchContacts = async () => {
-    try {
-      const res = await api.get('/users/contacts');
-      const fetched = res.data || [];
-      setContacts((prev) => {
-        const existingUuids = new Set(prev.map((c) => c.userUuid));
-        const newUsers = fetched.filter((c) => !existingUuids.has(c.userUuid));
-        const refreshedExisting = prev
-          .map((oldC) => fetched.find((f) => f.userUuid === oldC.userUuid))
-          .filter(Boolean);
-        return [...refreshedExisting, ...newUsers];
-      });
-    } catch (err) {
-      console.error('Failed to load contacts:', err);
-    }
-  };
+  try {
+    const res = await api.get('/users/contacts');
+    const fetched = res.data || [];
+    setContacts((prev) => {
+      const existingUuids = new Set(prev.map((c) => c.userUuid));
+      const newUsers = fetched.filter((c) => !existingUuids.has(c.userUuid));
+      const refreshedExisting = prev
+        .map((oldC) => fetched.find((f) => f.userUuid === oldC.userUuid))
+        .filter(Boolean);
+      return [...refreshedExisting, ...newUsers];
+    });
+    setActiveTarget((prev) => {
+      if (prev?.type !== 'DIRECT') return prev;
+      const freshContact = fetched.find((c) => c.userUuid === prev.data.userUuid);
+      return freshContact ? { type: 'DIRECT', data: freshContact } : prev;
+    });
+  } catch (err) {
+    console.error('Failed to load contacts:', err);
+  }
+};
 
   const fetchGroups = async () => {
     try {
       const res = await api.get('/groups');
-      setGroups(res.data || []);
+      const fetchedGroups = res.data || [];
+      setGroups(fetchedGroups);
+      setActiveTarget((prev) => {
+        if (prev?.type !== 'GROUP') return prev;
+        const refreshed = fetchedGroups.find((g) => g.groupUuid === prev.data.groupUuid);
+        return refreshed ? { type: 'GROUP', data: refreshed } : prev;
+      });
     } catch (err) {
       console.error('Failed to load groups:', err);
     }
@@ -240,7 +256,7 @@ export default function App() {
           current?.type === 'DIRECT' &&
           ((incomingMsg.senderUuid === current.data.userUuid &&
             incomingMsg.receiverUuid === currentUser.userUuid) ||
-            (incomingMsg.senderUuid === currentUser.userUuid &&
+            (incomingMsg.senderUuid === current.data.userUuid &&
               incomingMsg.receiverUuid === current.data.userUuid));
 
         if (isForOpenChat) {
@@ -572,6 +588,94 @@ export default function App() {
       setGroupError(err.response?.data?.message || 'Failed to create group');
     } finally {
       setGroupCreating(false);
+    }
+  };
+
+  const handleAddGroupMembers = async () => {
+    if (!activeTarget || activeTarget.type !== 'GROUP' || addMemberUuids.length === 0) return;
+    setGroupActionLoading(true);
+    setGroupActionError('');
+    try {
+      const membersPayload = addMemberUuids.map((uuid) => {
+        const contact = contacts.find((c) => c.userUuid === uuid);
+        return {
+          userUuid: uuid,
+          displayName: contact?.displayName || contact?.phoneNumber || 'Member',
+          targetLanguage: contact?.preferredLanguage || contact?.motherTongue || 'en'
+        };
+      });
+
+      const res = await api.post(`/groups/${activeTarget.data.groupUuid}/members`, {
+        members: membersPayload
+      });
+
+      const updatedGroup = res.data;
+      setGroups((prev) =>
+        prev.map((g) => (g.groupUuid === updatedGroup.groupUuid ? updatedGroup : g))
+      );
+      setActiveTarget({ type: 'GROUP', data: updatedGroup });
+      setAddMemberUuids([]);
+      setIsAddingGroupMembers(false);
+    } catch (err) {
+      setGroupActionError(err.response?.data?.message || 'Failed to add members');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleRemoveOrLeaveGroup = async (targetUserUuid) => {
+    if (!activeTarget || activeTarget.type !== 'GROUP') return;
+    const isSelf = targetUserUuid === currentUser.userUuid;
+    const confirmMsg = isSelf
+      ? 'Leave this group?'
+      : 'Remove this member from the group?';
+    if (!window.confirm(confirmMsg)) return;
+
+    setGroupActionLoading(true);
+    setGroupActionError('');
+    try {
+      const groupUuid = activeTarget.data.groupUuid;
+      await api.delete(`/groups/${groupUuid}/members/${targetUserUuid}`);
+
+      if (isSelf) {
+        setGroups((prev) => prev.filter((g) => g.groupUuid !== groupUuid));
+        setActiveTarget(null);
+        setIsGroupInfoOpen(false);
+      } else {
+        const detailRes = await api.get(`/groups/${groupUuid}`);
+        const updatedGroup = detailRes.data;
+        setGroups((prev) =>
+          prev.map((g) => (g.groupUuid === updatedGroup.groupUuid ? updatedGroup : g))
+        );
+        setActiveTarget({ type: 'GROUP', data: updatedGroup });
+      }
+    } catch (err) {
+      setGroupActionError(err.response?.data?.message || 'Failed to update group membership');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleToggleMemberRole = async (member) => {
+    if (!activeTarget || activeTarget.type !== 'GROUP') return;
+    const nextRole = member.role === 'ADMIN' ? 'MEMBER' : 'ADMIN';
+
+    setGroupActionLoading(true);
+    setGroupActionError('');
+    try {
+      const res = await api.put(
+        `/groups/${activeTarget.data.groupUuid}/members/${member.userUuid}/role`,
+        { role: nextRole }
+      );
+      const updatedGroup = res.data;
+      setGroups((prev) =>
+        prev.map((g) => (g.groupUuid === updatedGroup.groupUuid ? updatedGroup : g))
+      );
+      setActiveTarget({ type: 'GROUP', data: updatedGroup });
+    } catch (err) {
+      setGroupActionError(err.response?.data?.message || 'Failed to update member role');
+    } finally {
+      setGroupActionLoading(false);
     }
   };
 
@@ -958,9 +1062,14 @@ export default function App() {
                 </div>
               ) : (
                 <div
-                  onClick={() => setIsGroupInfoOpen(true)}
+                  onClick={() => {
+                    setGroupActionError('');
+                    setIsAddingGroupMembers(false);
+                    setAddMemberUuids([]);
+                    setIsGroupInfoOpen(true);
+                  }}
                   className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition"
-                  title="View Group Members"
+                  title="Manage Group Members & Admins"
                 >
                   <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-300">
                     <Users size={18} />
@@ -1232,44 +1341,204 @@ export default function App() {
         </div>
       )}
 
-      {/* GROUP INFO / MEMBERS MODAL */}
-      {isGroupInfoOpen && activeTarget?.type === 'GROUP' && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-base font-semibold text-white">{activeTarget.data.name}</h3>
-              <button onClick={() => setIsGroupInfoOpen(false)} className="text-[#8696a0] hover:text-white">
-                <X size={18} />
-              </button>
-            </div>
-            {activeTarget.data.description && (
-              <p className="text-xs text-[#8696a0] mb-4">{activeTarget.data.description}</p>
-            )}
+      {/* GROUP INFO / ADMIN MANAGEMENT MODAL */}
+      {isGroupInfoOpen && activeTarget?.type === 'GROUP' && (() => {
+        const isCurrentUserAdmin = activeTarget.data.members?.some(
+          (m) => m.userUuid === currentUser.userUuid && m.role === 'ADMIN'
+        );
+        const existingMemberIds = new Set(
+          (activeTarget.data.members || []).map((m) => m.userUuid)
+        );
+        const availableContactsToAdd = contacts.filter(
+          (c) => !existingMemberIds.has(c.userUuid)
+        );
 
-            <div className="text-xs text-[#00a884] font-semibold uppercase tracking-wider mb-2">
-              Members ({activeTarget.data.members?.length || activeTarget.data.memberCount})
-            </div>
-            <div className="max-h-56 overflow-y-auto space-y-2">
-              {(activeTarget.data.members || []).map((m) => (
-                <div
-                  key={m.userUuid}
-                  className="flex items-center justify-between bg-[#202c33] px-3 py-2 rounded-lg"
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-md p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-base font-semibold text-white">{activeTarget.data.name}</h3>
+                <button
+                  onClick={() => {
+                    setIsGroupInfoOpen(false);
+                    setIsAddingGroupMembers(false);
+                    setAddMemberUuids([]);
+                    setGroupActionError('');
+                  }}
+                  className="text-[#8696a0] hover:text-white"
                 >
-                  <div>
-                    <p className="text-xs font-medium text-white">
-                      {m.displayName} {m.userUuid === currentUser.userUuid && '(You)'}
-                    </p>
-                    <p className="text-[10px] text-[#8696a0]">{m.role}</p>
-                  </div>
-                  <span className="text-[10px] uppercase bg-[#111b21] text-emerald-300 px-2 py-0.5 rounded border border-[#2a3942]">
-                    Reads: {m.targetLanguage}
-                  </span>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {activeTarget.data.description && (
+                <p className="text-xs text-[#8696a0] mb-4">{activeTarget.data.description}</p>
+              )}
+
+              {groupActionError && (
+                <div className="mb-3 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-300 text-xs">
+                  {groupActionError}
                 </div>
-              ))}
+              )}
+
+              {/* Members Header + Admin Add Member Button */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-[#00a884] font-semibold uppercase tracking-wider">
+                  Members ({activeTarget.data.members?.length || activeTarget.data.memberCount})
+                </span>
+                {isCurrentUserAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingGroupMembers((prev) => !prev);
+                      setAddMemberUuids([]);
+                      setGroupActionError('');
+                    }}
+                    className="inline-flex items-center gap-1 text-xs bg-[#00a884] hover:bg-emerald-600 text-white font-medium px-2.5 py-1 rounded-lg transition"
+                  >
+                    <UserPlus size={13} />
+                    {isAddingGroupMembers ? 'Cancel' : 'Add Member'}
+                  </button>
+                )}
+              </div>
+
+              {/* Add Member Multi-Select Panel (Admins Only) */}
+              {isCurrentUserAdmin && isAddingGroupMembers && (
+                <div className="mb-3 p-3 rounded-xl bg-[#0c1317] border border-[#222d34] space-y-2.5">
+                  {availableContactsToAdd.length === 0 ? (
+                    <p className="text-xs text-[#8696a0]">
+                      All of your saved contacts are already in this group.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="max-h-36 overflow-y-auto space-y-1">
+                        {availableContactsToAdd.map((c) => {
+                          const checked = addMemberUuids.includes(c.userUuid);
+                          return (
+                            <div
+                              key={c.userUuid}
+                              onClick={() =>
+                                setAddMemberUuids((prev) =>
+                                  prev.includes(c.userUuid)
+                                    ? prev.filter((id) => id !== c.userUuid)
+                                    : [...prev, c.userUuid]
+                                )
+                              }
+                              className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
+                                checked ? 'bg-[#00a884]/20 border border-[#00a884]/50' : 'hover:bg-[#202c33]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {}}
+                                  className="accent-[#00a884] cursor-pointer"
+                                />
+                                <span className="text-xs text-white truncate">{c.displayName}</span>
+                              </div>
+                              <span className="text-[10px] uppercase text-[#8696a0]">
+                                {c.motherTongue}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={groupActionLoading || addMemberUuids.length === 0}
+                        onClick={handleAddGroupMembers}
+                        className="w-full bg-[#00a884] hover:bg-emerald-600 disabled:opacity-40 text-white font-semibold py-1.5 rounded-lg text-xs transition"
+                      >
+                        {groupActionLoading
+                          ? 'Adding...'
+                          : `Add Selected (${addMemberUuids.length})`}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Members List */}
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {(activeTarget.data.members || []).map((m) => {
+                  const isSelf = m.userUuid === currentUser.userUuid;
+                  return (
+                    <div
+                      key={m.userUuid}
+                      className="flex items-center justify-between bg-[#202c33] px-3 py-2.5 rounded-lg gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-white truncate">
+                          {m.displayName} {isSelf && '(You)'}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className={`text-[10px] font-semibold uppercase ${
+                              m.role === 'ADMIN' ? 'text-amber-400' : 'text-[#8696a0]'
+                            }`}
+                          >
+                            {m.role}
+                          </span>
+                          <span className="text-[10px] text-[#8696a0]">•</span>
+                          <span className="text-[10px] uppercase text-emerald-300">
+                            Reads: {m.targetLanguage}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Admin Controls for Other Members */}
+                      {isCurrentUserAdmin && !isSelf && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={groupActionLoading}
+                            onClick={() => handleToggleMemberRole(m)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#111b21] hover:bg-[#2a3942] border border-[#2a3942] text-[10px] text-amber-300 transition"
+                            title={m.role === 'ADMIN' ? 'Dismiss as Admin' : 'Make Admin'}
+                          >
+                            {m.role === 'ADMIN' ? (
+                              <>
+                                <ShieldOff size={12} /> Demote
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck size={12} /> Make Admin
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={groupActionLoading}
+                            onClick={() => handleRemoveOrLeaveGroup(m.userUuid)}
+                            className="p-1.5 rounded bg-[#111b21] hover:bg-rose-500/20 border border-[#2a3942] text-rose-400 transition"
+                            title="Remove from Group"
+                          >
+                            <UserMinus size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Leave Group Footer Button */}
+              <div className="mt-4 pt-3 border-t border-[#222d34]">
+                <button
+                  type="button"
+                  disabled={groupActionLoading}
+                  onClick={() => handleRemoveOrLeaveGroup(currentUser.userUuid)}
+                  className="w-full py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium transition"
+                >
+                  Leave Group
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ADD NEW CONTACT MODAL */}
       {isAddModalOpen && (

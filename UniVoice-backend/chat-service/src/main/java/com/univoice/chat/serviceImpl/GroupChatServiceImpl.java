@@ -73,13 +73,13 @@ public class GroupChatServiceImpl implements GroupChatService {
             messagingTemplate.convertAndSendToUser(member.getUserUuid(), "/queue/group-messages", rawDto);
         }
 
-        // 2. Collect unique target languages needed across all members (excluding sender's language & NONE)
+        // 2. Collect unique target languages needed across all members (excluding NONE)
         List<String> uniqueTargets = members.stream()
+                .filter(m -> !m.getUserUuid().equals(sender.getName()))
                 .map(GroupMember::getTargetLanguage)
                 .filter(Objects::nonNull)
                 .filter(lang -> !"NONE".equalsIgnoreCase(lang))
                 .map(this::baseLang)
-                .filter(lang -> !lang.equals(senderLang))
                 .distinct()
                 .toList();
 
@@ -200,11 +200,11 @@ public class GroupChatServiceImpl implements GroupChatService {
         }
 
         List<String> uniqueTargets = members.stream()
+                .filter(m -> !m.getUserUuid().equals(senderUuid))
                 .map(GroupMember::getTargetLanguage)
                 .filter(Objects::nonNull)
                 .filter(lang -> !"NONE".equalsIgnoreCase(lang))
                 .map(this::baseLang)
-                .filter(lang -> !lang.equals(msg.getSenderLanguage()))
                 .distinct()
                 .toList();
 

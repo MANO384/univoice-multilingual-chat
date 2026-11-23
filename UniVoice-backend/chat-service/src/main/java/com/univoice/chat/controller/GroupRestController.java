@@ -2,6 +2,7 @@ package com.univoice.chat.controller;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -87,5 +88,20 @@ public class GroupRestController {
             @RequestParam(defaultValue = "20") int size,
             Principal principal) {
         return ResponseEntity.ok(groupChatService.getGroupMessages(principal.getName(), groupUuid, page, size));
+    }
+    
+    @PutMapping("/{groupUuid}/members/{targetUserUuid}/role")
+    public ResponseEntity<GroupSummaryDto> updateMemberRole(
+            @PathVariable String groupUuid,
+            @PathVariable String targetUserUuid,
+            @RequestBody Map<String, String> body,
+            Principal principal) {
+        String role = body.get("role");
+        if (role == null || role.isBlank()) {
+            throw new IllegalArgumentException("Role is required");
+        }
+        return ResponseEntity.ok(
+                groupService.updateMemberRole(principal.getName(), groupUuid, targetUserUuid, role)
+        );
     }
 }

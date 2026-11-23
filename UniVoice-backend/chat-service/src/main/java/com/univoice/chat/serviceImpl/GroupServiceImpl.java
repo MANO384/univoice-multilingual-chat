@@ -136,6 +136,41 @@ public class GroupServiceImpl implements GroupService {
 
         return toSummary(group, userUuid);
     }
+    
+    @Override
+    @Transactional
+    public GroupSummaryDto updateMemberRole(String requesterUuid, String groupUuid, String targetUserUuid, String role) {
+        ChatGroup group = requireGroup(groupUuid);
+        GroupMember requester = requireMembership(groupUuid, requesterUuid);
+
+        if (requester.getRole() != MemberRole.ADMIN) {
+            throw new IllegalArgumentException("Only group admins can change member roles");
+        }
+
+        MemberRole newRole;
+        try {
+            newRole = MemberRole.valueOf(role.trim().toUpperCase());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid role. Must be ADMIN or MEMBER");
+        }
+
+        GroupMember target = requireMembership(groupUuid, targetUserUuid);
+
+        // Prevent demoting the last remaining admin
+        if (target.getRole() == MemberRole.ADMIN && newRole == MemberRole.MEMBER) {
+            long adminCount = memberRepository.findByGroupUuid(groupUuid).stream()
+                    .filter(m -> m.getRole() == MemberRole.ADMIN)
+                    .count();
+            if (adminCount <= 1) {
+                throw new IllegalArgumentException("Cannot demote the only admin. Promote another member first.");
+            }
+        }
+
+        target.setRole(newRole);
+        memberRepository.save(target);
+
+        return toSummary(group, requesterUuid);
+    }
 
     private ChatGroup requireGroup(String groupUuid) {
         return groupRepository.findByGroupUuid(groupUuid)

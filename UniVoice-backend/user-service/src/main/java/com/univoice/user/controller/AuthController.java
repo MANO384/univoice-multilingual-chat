@@ -19,9 +19,9 @@ public class AuthController {
 
     @PostMapping("/send-otp")
     public ResponseEntity<Map<String, String>> sendOtp(@Valid @RequestBody SendOtpRequest request) {
-        authService.sendOtp(request);
-        return ResponseEntity.ok(Map.of("message", "OTP sent. Check service console."));
-    }
+    	authService.sendOtp(request);
+        return ResponseEntity.ok(Map.of("message", "Verification OTP sent to " + request.getEmail()));
+        }
 
     @PostMapping("/verify-otp")
     public ResponseEntity<Map<String, String>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
@@ -46,9 +46,9 @@ public class AuthController {
     
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        authService.sendForgotPasswordOtp(request);
-        return ResponseEntity.ok(Map.of("message", "Password reset OTP sent. Check service console."));
-    }
+    	String maskedEmail = authService.sendForgotPasswordOtp(request);
+        return ResponseEntity.ok(Map.of("message", "Password reset OTP sent to " + maskedEmail));
+        }
 
     @PostMapping("/reset-password")
     public ResponseEntity<Map<String,String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {

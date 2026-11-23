@@ -47,25 +47,23 @@ public class TranslationServiceImpl implements TranslationService {
         }
 
         String targetLang = LanguageCodes.base(target.targetLanguage());
-        String sourceLang = LanguageCodes.base(event.senderLanguage());
-
-        if (targetLang.equals(sourceLang)) {
-            return;
-        }
+        String sourceLang = "auto";
 
         String translated = translationRepository
                 .findByMessageUuidAndTargetLanguage(event.messageUuid(), targetLang)
                 .map(MessageTranslation::getTranslatedText)
                 .orElseGet(() -> translateAndStore(event, sourceLang, targetLang));
 
-        kafkaProducer.publishTranslatedMessage(new TranslatedMessageEvent(
-                event.messageUuid(),
-                event.senderUuid(),
-                event.receiverUuid(),
-                event.originalText(),
-                translated,
-                targetLang,
-                LocalDateTime.now()));
+        if (translated != null && !translated.isBlank() && !translated.equalsIgnoreCase(event.originalText().trim())) {
+            kafkaProducer.publishTranslatedMessage(new TranslatedMessageEvent(
+                    event.messageUuid(),
+                    event.senderUuid(),
+                    event.receiverUuid(),
+                    event.originalText(),
+                    translated,
+                    targetLang,
+                    LocalDateTime.now()));
+        }
     }
 
     @Override
@@ -73,16 +71,16 @@ public class TranslationServiceImpl implements TranslationService {
         if (event == null || event.originalText() == null || event.originalText().isBlank()) return;
         if (event.targetLanguages() == null || event.targetLanguages().isEmpty()) return;
 
-        String sourceLang = LanguageCodes.base(event.senderLanguage());
+        String sourceLang = "auto";
         Map<String, String> translations = new LinkedHashMap<>();
 
         for (String rawTarget : event.targetLanguages()) {
             if (rawTarget == null || rawTarget.isBlank() || "NONE".equalsIgnoreCase(rawTarget)) continue;
             String targetLang = LanguageCodes.base(rawTarget);
-            if (targetLang.equals(sourceLang)) continue;
 
             String translatedText = translateHybrid(event.originalText(), sourceLang, targetLang);
-            if (translatedText != null && !translatedText.isBlank() && !translatedText.equals(event.originalText())) {
+            if (translatedText != null && !translatedText.isBlank()
+                    && !translatedText.equalsIgnoreCase(event.originalText().trim())) {
                 translations.put(targetLang, translatedText);
             }
         }
@@ -116,32 +114,20 @@ public class TranslationServiceImpl implements TranslationService {
     }
 
     private String translateHybrid(String text, String sourceLang, String targetLang) {
-        String cacheKeySource = sourceLang == null ? "auto" : sourceLang;
+        String cacheKeySource = "auto";
         String mode = sarvamAiClient.getMode();
 
         return cacheService.get(text, cacheKeySource, targetLang, mode)
                 .orElseGet(() -> {
                     String result;
-                    boolean sourceInSarvam = LanguageCodes.isSarvamSupported(sourceLang) || "auto".equals(sourceLang);
                     boolean targetInSarvam = LanguageCodes.isSarvamSupported(targetLang);
 
-                    if (sourceInSarvam && targetInSarvam) {
-                        // Case 1: Indian <-> Indian or Indian <-> English -> Sarvam AI
-                        String srcLocale = LanguageCodes.toSarvam(sourceLang).orElse("auto");
+                    if (targetInSarvam) {
+                        // Sarvam AI auto-detects English, Tanglish, or Indian script and translates to target Indian/EN language
                         String tgtLocale = LanguageCodes.toSarvam(targetLang).orElse("en-IN");
-                        result = sarvamAiClient.translate(text, srcLocale, tgtLocale);
-                    } else if (LanguageCodes.isIndic(sourceLang) && !targetInSarvam) {
-                        // Case 2: Indian (e.g., Tanglish) -> Foreign (e.g., German/Chinese) via English pivot
-                        String srcLocale = LanguageCodes.toSarvam(sourceLang).orElse("auto");
-                        String englishPivot = sarvamAiClient.translate(text, srcLocale, "en-IN");
-                        result = globalTranslationClient.translate(englishPivot, targetLang);
-                    } else if (!sourceInSarvam && LanguageCodes.isIndic(targetLang) && !"en".equals(targetLang)) {
-                        // Case 3a: Foreign (e.g., German) -> English pivot -> Indian via Sarvam AI
-                        String englishPivot = "en".equals(sourceLang) ? text : globalTranslationClient.translate(text, "en");
-                        String tgtLocale = LanguageCodes.toSarvam(targetLang).orElse("en-IN");
-                        result = sarvamAiClient.translate(englishPivot, "en-IN", tgtLocale);
+                        result = sarvamAiClient.translate(text, "auto", tgtLocale);
                     } else {
-                        // Case 3b: Foreign <-> Foreign (e.g., German -> Chinese, German -> Spanish)
+                        // Global/European languages (German, French, Spanish, etc.) via Groq
                         result = globalTranslationClient.translate(text, targetLang);
                     }
 

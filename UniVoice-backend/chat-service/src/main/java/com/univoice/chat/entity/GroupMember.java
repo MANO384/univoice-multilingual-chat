@@ -33,7 +33,8 @@ public class GroupMember {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 15)
-    private MemberRole role;
+    @Builder.Default
+    private MemberRole role = MemberRole.MEMBER;
 
     // Effective language for this group (e.g. "zh", "es", "ta", or "NONE")
     @Column(nullable = false, length = 15)

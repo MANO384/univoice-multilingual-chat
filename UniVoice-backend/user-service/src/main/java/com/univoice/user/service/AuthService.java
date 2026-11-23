@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,13 +29,12 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final StringRedisTemplate redisTemplate;
-    private final SmsService smsService;
+    private final EmailOtpService emailOtpService;
 
     private static final String OTP_PREFIX = "otp:";
     private static final Duration OTP_TTL = Duration.ofMinutes(5);
     private static final String RESET_OTP_PREFIX = "reset_otp:";
 
-    // Helper: Finds user by normalized E.164 phone (e.g. +918239346834) OR legacy 10-digit format
     private Optional<User> findUserByNormalizedPhone(String normalizedPhone) {
         String digits = normalizedPhone.replaceAll("[^0-9]", "");
         String last10 = digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
@@ -44,13 +44,18 @@ public class AuthService {
 
     public void sendOtp(SendOtpRequest request) {
         String phone = PhoneNormalizer.normalize(request.getPhoneNumber());
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+
         if (findUserByNormalizedPhone(phone).isPresent()) {
             throw new UserAlreadyExistsException("Phone number already registered. Please login.");
+        }
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new UserAlreadyExistsException("Email address already registered. Please login.");
         }
 
         String otp = String.format("%06d", new SecureRandom().nextInt(999999));
         redisTemplate.opsForValue().set(OTP_PREFIX + phone, otp, OTP_TTL);
-        smsService.sendOtp(phone, otp);
+        emailOtpService.sendOtpEmail(email, otp, "account registration");
     }
 
     public void verifyOtp(VerifyOtpRequest request) {
@@ -65,6 +70,7 @@ public class AuthService {
     @Transactional
     public AuthResponse signUp(SignUpRequest request) {
         String phone = PhoneNormalizer.normalize(request.getPhoneNumber());
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         request.setPhoneNumber(phone);
 
         verifyOtp(new VerifyOtpRequest() {{
@@ -74,6 +80,9 @@ public class AuthService {
 
         if (findUserByNormalizedPhone(phone).isPresent()) {
             throw new UserAlreadyExistsException("Phone number already registered. Please login.");
+        }
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new UserAlreadyExistsException("Email address already registered. Please login.");
         }
 
         redisTemplate.delete(OTP_PREFIX + phone);
@@ -88,6 +97,7 @@ public class AuthService {
         User user = User.builder()
                 .userUuid(userUuid)
                 .phoneNumber(phone)
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .displayName(request.getDisplayName().trim())
                 .motherTongue(request.getMotherTongue().toLowerCase())
@@ -108,6 +118,7 @@ public class AuthService {
                 .refreshToken(refreshToken)
                 .userUuid(userUuid)
                 .displayName(user.getDisplayName())
+                .email(user.getEmail())
                 .motherTongue(user.getMotherTongue())
                 .preferredLanguage(user.getDefaultLanguage())
                 .build();
@@ -139,6 +150,7 @@ public class AuthService {
                 .refreshToken(refreshToken)
                 .userUuid(user.getUserUuid())
                 .displayName(user.getDisplayName())
+                .email(user.getEmail())
                 .motherTongue(user.getMotherTongue())
                 .preferredLanguage(user.getDefaultLanguage())
                 .build();
@@ -169,21 +181,27 @@ public class AuthService {
                 .refreshToken(user.getRefreshToken())
                 .userUuid(user.getUserUuid())
                 .displayName(user.getDisplayName())
+                .email(user.getEmail())
                 .motherTongue(user.getMotherTongue())
                 .preferredLanguage(user.getDefaultLanguage())
                 .build();
     }
 
-    public void sendForgotPasswordOtp(ForgotPasswordRequest request) {
+    public String sendForgotPasswordOtp(ForgotPasswordRequest request) {
         String phone = PhoneNormalizer.normalize(request.getPhoneNumber());
 
         User user = findUserByNormalizedPhone(phone)
                 .orElseThrow(() -> new IllegalArgumentException("No account found with this phone number"));
 
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new IllegalArgumentException("No recovery email linked to this legacy account.");
+        }
+
         String otp = String.format("%06d", new SecureRandom().nextInt(999999));
         redisTemplate.opsForValue().set(RESET_OTP_PREFIX + phone, otp, OTP_TTL);
 
-        smsService.sendOtp(phone, otp);
+        emailOtpService.sendOtpEmail(user.getEmail(), otp, "password reset");
+        return maskEmail(user.getEmail());
     }
 
     @Transactional
@@ -217,5 +235,11 @@ public class AuthService {
                 log.info("User {} logged out successfully.", userUuid);
             });
         }
+    }
+
+    private String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 2) return "***" + email.substring(Math.max(at, 0));
+        return email.substring(0, 2) + "***" + email.substring(at);
     }
 }

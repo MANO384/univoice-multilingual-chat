@@ -17,4 +17,6 @@ public interface GroupService {
     void removeMember(String requesterUuid, String groupUuid, String targetUserUuid);
 
     GroupSummaryDto updateMemberLanguage(String userUuid, String groupUuid, String targetLanguage);
+    
+    GroupSummaryDto updateMemberRole(String requesterUuid, String groupUuid, String targetUserUuid, String role);
 }

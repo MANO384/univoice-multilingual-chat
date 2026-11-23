@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
-import { MessageSquare, Lock, User, Globe, KeyRound, ArrowLeft } from 'lucide-react';
-
+import { MessageSquare, Lock, User, Globe, KeyRound, ArrowLeft, Mail } from 'lucide-react';
 import { COUNTRY_CODES, ALL_LANGUAGES } from '../constants/languages';
 
 export default function AuthScreen({ onAuthSuccess }) {
@@ -10,6 +9,7 @@ export default function AuthScreen({ onAuthSuccess }) {
 
   const [countryCode, setCountryCode] = useState('+91');
   const [localPhone, setLocalPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -20,7 +20,6 @@ export default function AuthScreen({ onAuthSuccess }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  // Combines selected country code + digits cleanly
   const getFullPhoneNumber = () => {
     const cleanDigits = localPhone.replace(/\D/g, '');
     return `${countryCode}${cleanDigits}`;
@@ -58,7 +57,7 @@ export default function AuthScreen({ onAuthSuccess }) {
           onChange={(e) => setLocalPhone(e.target.value.replace(/\D/g, ''))}
           placeholder="Enter phone number"
           className="w-full bg-[#202c33] border border-[#2a3942] rounded-lg px-3 py-2 text-sm text-white tracking-wide focus:outline-none focus:border-[#00a884]"
-/>
+        />
       </div>
     </div>
   );
@@ -85,18 +84,21 @@ export default function AuthScreen({ onAuthSuccess }) {
     }
   };
 
-  // SIGN UP STEP 1: SEND OTP
+  // SIGN UP STEP 1: SEND EMAIL OTP
   const handleSendSignupOtp = async (e) => {
     e.preventDefault();
     setError('');
     setInfo('');
     setLoading(true);
     try {
-      await api.post('/auth/send-otp', { phoneNumber: getFullPhoneNumber() });
-      setInfo(`OTP sent for ${getFullPhoneNumber()}! Check your user-service console.`);
+      await api.post('/auth/send-otp', {
+        phoneNumber: getFullPhoneNumber(),
+        email: email.trim()
+      });
+      setInfo(`Verification code sent to ${email.trim()}! Check your inbox.`);
       setStep(2);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP');
+      setError(err.response?.data?.message || 'Failed to send verification email');
     } finally {
       setLoading(false);
     }
@@ -112,7 +114,7 @@ export default function AuthScreen({ onAuthSuccess }) {
         phoneNumber: getFullPhoneNumber(),
         otp
       });
-      setInfo('OTP verified! Complete your profile below.');
+      setInfo('Email verified! Complete your profile below.');
       setStep(3);
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid or expired OTP');
@@ -129,6 +131,7 @@ export default function AuthScreen({ onAuthSuccess }) {
     try {
       const res = await api.post('/auth/signup', {
         phoneNumber: getFullPhoneNumber(),
+        email: email.trim(),
         otp,
         password,
         displayName,
@@ -147,18 +150,18 @@ export default function AuthScreen({ onAuthSuccess }) {
     }
   };
 
-  // FORGOT PASSWORD STEP 1: REQUEST RESET OTP
+  // FORGOT PASSWORD STEP 1: REQUEST RESET OTP TO LINKED EMAIL
   const handleSendResetOtp = async (e) => {
     e.preventDefault();
     setError('');
     setInfo('');
     setLoading(true);
     try {
-      await api.post('/auth/forgot-password', { phoneNumber: getFullPhoneNumber() });
-      setInfo(`Reset OTP generated for ${getFullPhoneNumber()}! Check user-service console.`);
+      const res = await api.post('/auth/forgot-password', { phoneNumber: getFullPhoneNumber() });
+      setInfo(res.data?.message || 'Reset OTP sent to your registered email!');
       setStep(2);
     } catch (err) {
-      setError(err.response?.data?.message || 'Phone number not registered');
+      setError(err.response?.data?.message || 'Unable to send reset OTP');
     } finally {
       setLoading(false);
     }
@@ -182,7 +185,7 @@ export default function AuthScreen({ onAuthSuccess }) {
     } finally {
       setLoading(false);
     }
-  };   
+  };
 
   return (
     <div className="min-h-screen bg-[#0c1317] flex items-center justify-center p-4 font-sans text-gray-100">
@@ -264,12 +267,28 @@ export default function AuthScreen({ onAuthSuccess }) {
             {step === 1 && (
               <form onSubmit={handleSendSignupOtp} className="space-y-4">
                 {renderPhoneInput('Select Country & Phone Number')}
+
+                <div>
+                  <label className="text-xs text-[#8696a0] block mb-1">Email Address (For OTP Verification)</label>
+                  <div className="relative">
+                    <Mail size={15} className="absolute left-3 top-3 text-[#8696a0]" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full bg-[#202c33] border border-[#2a3942] rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-[#00a884]"
+                    />
+                  </div>
+                </div>
+
                 <button
                   type="submit"
-                  disabled={loading || localPhone.length < 7}
+                  disabled={loading || localPhone.length < 7 || !email.trim()}
                   className="w-full bg-[#00a884] hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition"
                 >
-                  {loading ? 'Sending OTP...' : 'Send OTP'}
+                  {loading ? 'Sending Verification Email...' : 'Send Verification OTP'}
                 </button>
               </form>
             )}
@@ -277,7 +296,7 @@ export default function AuthScreen({ onAuthSuccess }) {
             {step === 2 && (
               <form onSubmit={handleVerifySignupOtp} className="space-y-4">
                 <div>
-                  <label className="text-xs text-[#8696a0] block mb-1">Enter 6-Digit Console OTP</label>
+                  <label className="text-xs text-[#8696a0] block mb-1">Enter 6-Digit Email OTP</label>
                   <div className="relative">
                     <KeyRound size={15} className="absolute left-3 top-3 text-[#8696a0]" />
                     <input
@@ -285,7 +304,7 @@ export default function AuthScreen({ onAuthSuccess }) {
                       required
                       maxLength={6}
                       value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                       placeholder="123456"
                       className="w-full bg-[#202c33] border border-[#2a3942] rounded-lg pl-9 pr-3 py-2 text-sm text-white tracking-widest focus:outline-none focus:border-[#00a884]"
                     />
@@ -293,8 +312,8 @@ export default function AuthScreen({ onAuthSuccess }) {
                 </div>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#00a884] hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg text-sm transition"
+                  disabled={loading || otp.length < 6}
+                  className="w-full bg-[#00a884] hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition"
                 >
                   {loading ? 'Verifying...' : 'Verify OTP'}
                 </button>
@@ -398,16 +417,16 @@ export default function AuthScreen({ onAuthSuccess }) {
                 {renderPhoneInput('Registered Phone Number')}
                 <button
                   type="submit"
-                  disabled={loading || localPhone.length < 10}
+                  disabled={loading || localPhone.length < 7}
                   className="w-full bg-[#00a884] hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition"
                 >
-                  {loading ? 'Sending Reset OTP...' : 'Send Reset OTP'}
+                  {loading ? 'Sending Reset OTP...' : 'Send Reset OTP to Email'}
                 </button>
               </form>
             ) : (
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <div>
-                  <label className="text-xs text-[#8696a0] block mb-1">6-Digit Console OTP</label>
+                  <label className="text-xs text-[#8696a0] block mb-1">6-Digit Email OTP</label>
                   <div className="relative">
                     <KeyRound size={15} className="absolute left-3 top-3 text-[#8696a0]" />
                     <input
@@ -415,7 +434,7 @@ export default function AuthScreen({ onAuthSuccess }) {
                       required
                       maxLength={6}
                       value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                       placeholder="123456"
                       className="w-full bg-[#202c33] border border-[#2a3942] rounded-lg pl-9 pr-3 py-2 text-sm text-white tracking-widest focus:outline-none focus:border-[#00a884]"
                     />
